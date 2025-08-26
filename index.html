@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Health tracker</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root{
+      --bg:#0b0b0f; --panel:#111318; --panel-2:#151922; --muted:#9ca3af; --text:#e5e7eb;
+      --accent:#14b8a6; --accent-2:#06b6d4; --ring:#22d3ee; --danger:#ef4444; --success:#10b981;
+      --border:rgba(255,255,255,0.08); --shadow:0 10px 30px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset;
+      --btn-bg:linear-gradient(180deg, rgba(20,184,166,0.28), rgba(20,184,166,0.11));
+      --btn-bg-dim:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      --btn-text:#eafffb;
+    }
+    body { font-family:'Inter',sans-serif; background: radial-gradient(1200px 600px at 10% -10%, rgba(20,184,166,0.12), transparent 60%), radial-gradient(1000px 700px at 110% 10%, rgba(6,182,212,0.10), transparent 60%), var(--bg); color:var(--text); }
+    header { background:linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.25)); border-bottom:1px solid var(--border); }
+    .nav-link{ transition: color .25s ease; } .nav-link:hover{ color:var(--accent); }
+    .panel{ background: var(--panel); border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow); }
+    .panel-2{ background: var(--panel-2); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); }
+    .progress-circle-container{ width: 110px; height:110px; }
+    @media(min-width:768px){ .progress-circle-container{ width:130px; height:130px; } }
+    .input, select{ background: rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:.5rem .65rem; outline:none; transition: border-color .2s ease, box-shadow .2s ease; }
+    .input:focus, select:focus{ border-color: var(--ring); box-shadow: 0 0 0 3px rgba(34,211,238,0.12); }
+    .btn{ border-radius:10px; padding:.6rem .9rem; font-weight:600; border:1px solid var(--border); color:var(--text); transition: all .2s ease; background:var(--btn-bg-dim); }
+    .btn:hover{ border-color:var(--accent); color:var(--accent); }
+    .btn-primary{ background: var(--btn-bg); border-color: rgba(20,184,166,0.5); color:var(--btn-text); }
+    .btn-primary:hover{ background: linear-gradient(180deg, rgba(20,184,166,0.38), rgba(20,184,166,0.18)); box-shadow:0 8px 24px rgba(20,184,166,0.28); }
+    .btn-danger{ background:linear-gradient(180deg, rgba(239,68,68,0.18), rgba(239,68,68,0.07)); border-color:rgba(239,68,68,0.5); color:#fee2e2; }
+    .btn-danger:hover{ color:#fff; background:rgba(239,68,68,0.25); }
+    .table th, .table td{ padding:.65rem .75rem; } .table thead{ background: rgba(255,255,255,0.04); }
+    .accordion{ max-height:0; overflow:hidden; transition:max-height .3s ease-out; }
+    .toast{ position: fixed; bottom: 1rem; right: 1rem; background: #0a0f12; color: var(--text); padding: .75rem 1rem; border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--shadow); opacity:0; transform: translateY(10px); transition: all .25s ease; z-index: 1000; }
+    .toast.show{ opacity:1; transform: translateY(0); }
+    .add-meal-wide{ display:block; width:100%; text-align:center; padding:1rem; border-radius:12px; border:2px dashed rgba(20,184,166,0.5); color:#7efce7; background:rgba(20,184,166,0.06); transition: all .2s ease; }
+    .add-meal-wide:hover{ background:rgba(20,184,166,0.12); }
+  </style>
+</head>
+<body>
+<header class="sticky top-0 z-40 backdrop-blur-lg">
+  <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+    <h1 class="text-xl md:text-2xl font-bold" style="background: linear-gradient(90deg, #5eead4, #22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent;">Health tracker</h1>
+    <nav class="hidden md:flex space-x-6 text-sm">
+      <a href="#today" class="nav-link text-gray-300 font-medium">Today's Log</a>
+      <a href="#progress" class="nav-link text-gray-300 font-medium">Progress</a>
+      <a href="#foods" class="nav-link text-gray-300 font-medium">Food Reference</a>
+      <a href="#insights" class="nav-link text-gray-300 font-medium">Insights</a>
+      <a href="#plans" class="nav-link text-gray-300 font-medium">Meal Plans</a>
+    </nav>
+    <div class="flex items-center gap-2">
+      <button id="exportBtn" class="btn text-sm">Export Excel</button>
+      <label class="btn text-sm cursor-pointer">Import Excel<input id="importFile" type="file" accept=".xlsx,.xls" class="hidden"/></label>
+      <button id="editGoalsBtn" class="btn text-sm">Edit goals</button>
+      <span id="currentDate" class="text-xs md:text-sm" style="color:var(--muted)"></span>
+    </div>
+  </div>
+</header>
+
+<main class="container mx-auto p-4 md:p-6 space-y-12">
+
+  <section id="today">
+    <h2 class="text-2xl font-bold mb-4">Today's Log</h2>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 text-center">
+      <div class="panel p-4">
+        <div class="progress-circle-container mx-auto"><canvas id="caloriesChart"></canvas></div>
+        <p class="mt-3 font-semibold">Calories</p>
+        <p id="caloriesText" class="text-sm" style="color:var(--muted)">0 / <span id="goalCalsDisplay" class="editable-goal">1650</span> kcal</p>
+        <div class="goal-editor" id="goalCalsEditor"><input id="goalCalsInput" class="input w-24" type="number" min="800" max="6000" step="10"><button id="goalCalsSave" class="btn-primary btn text-xs">Save</button><button id="goalCalsCancel" class="btn text-xs">Cancel</button></div>
+      </div>
+      <div class="panel p-4">
+        <div class="progress-circle-container mx-auto"><canvas id="proteinChart"></canvas></div>
+        <p class="mt-3 font-semibold">Protein</p>
+        <p id="proteinText" class="text-sm" style="color:var(--muted)">0 / <span id="goalPDisplay" class="editable-goal">120</span> g</p>
+      </div>
+      <div class="panel p-4">
+        <div class="progress-circle-container mx-auto"><canvas id="carbsChart"></canvas></div>
+        <p class="mt-3 font-semibold">Carbs</p>
+        <p id="carbsText" class="text-sm" style="color:var(--muted)">0 / <span id="goalCDisplay" class="editable-goal">150</span> g</p>
+      </div>
+      <div class="panel p-4">
+        <div class="progress-circle-container mx-auto"><canvas id="fatsChart"></canvas></div>
+        <p class="mt-3 font-semibold">Fats</p>
+        <p id="fatsText" class="text-sm" style="color:var(--muted)">0 / <span id="goalFDisplay" class="editable-goal">55</span> g</p>
+      </div>
+      <div class="panel p-4">
+        <div class="progress-circle-container mx-auto"><canvas id="fiberChart"></canvas></div>
+        <p class="mt-3 font-semibold">Fiber</p>
+        <p id="fiberText" class="text-sm" style="color:var(--muted)">0 / <span id="goalFibDisplay" class="editable-goal">25</span> g</p>
+      </div>
+    </div>
+
+    <div id="meal-logging-area" class="space-y-6"></div>
+
+    <div class="mt-6">
+      <button id="addMealBtn" class="add-meal-wide">+ Add Meal</button>
+    </div>
+  </section>
+  <section id="progress">
+    <h2 class="text-2xl font-bold mb-4">Progress Tracker</h2>
+    <div class="panel p-6">
+      <div class="flex justify-between items-center mb-4">
+        <button id="prevMonth" class="btn" title="Prev Month">&lt;</button>
+        <h3 id="monthYear" class="text-lg font-semibold"></h3>
+        <button id="nextMonth" class="btn" title="Next Month">&gt;</button>
+      </div>
+      <div id="calendar" class="grid grid-cols-7 gap-1 text-center"></div>
+      <div id="weeklyAverages" class="mt-6 pt-4 border-t" style="border-color:var(--border)"></div>
+    </div>
+  </section>
+
+  <section id="insights">
+    <h2 class="text-2xl font-bold mb-4">Insights</h2>
+    <div class="panel p-6">
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="panel-2 p-4">
+          <h4 class="font-semibold mb-2">Calories per day (Week)</h4>
+          <div style="height:260px"><canvas id="weekCalories"></canvas></div>
+        </div>
+        <div class="panel-2 p-4">
+          <h4 class="font-semibold mb-2">Calories per day (Month)</h4>
+          <div style="height:260px"><canvas id="monthCalories"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="foods">
+    <div class="flex items-center justify-between">
+      <h2 class="text-2xl font-bold mb-4">Food Reference</h2>
+      <div class="flex items-center gap-2">
+        <select id="foodViewFilter" class="input text-sm">
+          <option value="all">Show: All</option>
+          <option value="builtin">Built‑in</option>
+          <option value="my">My Foods</option>
+        </select>
+        <button id="manageFoodsBtn" class="btn">Manage Foods</button>
+      </div>
+    </div>
+    <div class="panel p-6">
+      <p class="text-sm mb-4" style="color:var(--muted)">Values per 100 g, per unit, or per tbsp/oz/ml where applicable. Use Manage Foods to override with exact labels.</p>
+      <div class="overflow-x-auto">
+        <table id="foodTable" class="table min-w-full">
+          <thead>
+            <tr>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="name" style="color:var(--muted)">Food</th>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="basis" style="color:var(--muted)">Unit Basis</th>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="cals" style="color:var(--muted)">Calories</th>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="p" style="color:var(--muted)">Protein (g)</th>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="c" style="color:var(--muted)">Carbs (g)</th>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="f" style="color:var(--muted)">Fats (g)</th>
+              <th class="text-left text-xs font-medium uppercase sortable px-4 py-3" data-key="fib" style="color:var(--muted)">Fiber (g)</th>
+              <th class="text-left text-xs font-medium uppercase px-4 py-3" style="color:var(--muted)">Source</th>
+              <th class="text-left text-xs font-medium uppercase px-4 py-3" style="color:var(--muted)">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="foodTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="plans">
+    <h2 class="text-2xl font-bold mb-4">Meal Plans (Examples)</h2>
+    <div class="panel p-6 overflow-x-auto">
+      <table class="table min-w-full" id="plansTable">
+        <thead>
+          <tr>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Day Type / Workout Alignment</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Calorie Target</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Var.</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Protein Sources</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Carb Sources</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Fat Sources</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Veg & Fruits</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">P</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">C</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">F</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Fiber</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Dishes</th>
+            <th class="px-3 py-2 text-left text-xs uppercase" style="color:var(--muted)">Supplement</th>
+          </tr>
+        </thead>
+        <tbody id="plansTbody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- Manage Foods Modal -->
+<div id="foodsModal" class="modal fixed inset-0 z-50 hidden opacity-0">
+  <div class="absolute inset-0 bg-black/70"></div>
+  <div class="relative max-w-3xl w-full mx-auto mt-12 p-0">
+    <div class="panel-2 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold">Manage Foods</h3>
+        <button id="closeFoodsModal" class="btn">Close</button>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div>
+          <h4 class="font-semibold mb-2">My Foods</h4>
+          <div class="overflow-x-auto">
+            <table class="table min-w-full">
+              <thead>
+                <tr>
+                  <th class="text-left text-xs uppercase px-3 py-2" style="color:var(--muted)">Name</th>
+                  <th class="text-left text-xs uppercase px-3 py-2" style="color:var(--muted)">Basis</th>
+                  <th class="text-left text-xs uppercase px-3 py-2" style="color:var(--muted)">Calories</th>
+                  <th class="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody id="myFoodsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h4 class="font-semibold mb-2">Add / Edit Food</h4>
+          <form id="foodForm" class="space-y-3">
+            <input type="hidden" id="foodEditingName"/>
+            <div>
+              <label class="text-sm" for="foodName">Name</label>
+              <input id="foodName" class="input w-full" placeholder="e.g., Ranch (Hidden Valley)"/>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-sm" for="foodBasis">Basis</label>
+                <select id="foodBasis" class="input w-full">
+                  <option value="per100g">per 100 g</option>
+                  <option value="perUnit">per unit</option>
+                  <option value="perTbsp">per tbsp (15 g)</option>
+                  <option value="perTsp">per tsp (5 g)</option>
+                  <option value="perOz">per oz (28 g)</option>
+                  <option value="perMl">per 10 ml</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-sm" for="foodUnitLabel">Unit Label (if per unit)</label>
+                <input id="foodUnitLabel" class="input w-full" placeholder="e.g., 1 egg, 1 slice"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <div><label class="text-sm" for="foodCals">Calories</label><input id="foodCals" class="input w-full" type="number" min="0" step="0.1"/></div>
+              <div><label class="text-sm" for="foodP">Protein (g)</label><input id="foodP" class="input w-full" type="number" min="0" step="0.1"/></div>
+              <div><label class="text-sm" for="foodC">Carbs (g)</label><input id="foodC" class="input w-full" type="number" min="0" step="0.1"/></div>
+              <div><label class="text-sm" for="foodF">Fats (g)</label><input id="foodF" class="input w-full" type="number" min="0" step="0.1"/></div>
+              <div><label class="text-sm" for="foodFib">Fiber (g)</label><input id="foodFib" class="input w-full" type="number" min="0" step="0.1"/></div>
+            </div>
+            <div class="flex items-center gap-2 pt-2">
+              <button type="submit" class="btn-primary btn">Save Food</button>
+              <button type="button" id="resetFoodForm" class="btn">Reset</button>
+              <span id="foodFormMsg" class="text-sm"></span>
+            </div>
+          </form>
+          <p class="text-xs mt-2" style="color:var(--muted)">Saving the same name as a built‑in creates a personal override.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Goals Modal -->
+<div id="goalsModal" class="modal fixed inset-0 z-50 hidden opacity-0">
+  <div class="absolute inset-0 bg-black/70"></div>
+  <div class="relative max-w-md w-full mx-auto mt-24 p-0">
+    <div class="panel-2 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold">Edit Daily Goals</h3>
+        <button id="closeGoalsModal" class="btn">Close</button>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div><label class="text-sm">Calories</label><input id="goalCalsFull" type="number" class="input w-full" min="800" max="6000" step="10"/></div>
+        <div><label class="text-sm">Protein (g)</label><input id="goalPFull" type="number" class="input w-full" min="0" max="500" step="1"/></div>
+        <div><label class="text-sm">Carbs (g)</label><input id="goalCFull" type="number" class="input w-full" min="0" max="800" step="1"/></div>
+        <div><label class="text-sm">Fats (g)</label><input id="goalFFull" type="number" class="input w-full" min="0" max="300" step="1"/></div>
+        <div><label class="text-sm">Fiber (g)</label><input id="goalFibFull" type="number" class="input w-full" min="0" max="200" step="1"/></div>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button id="saveGoalsFull" class="btn-primary btn">Save</button>
+        <button id="resetGoalsFull" class="btn">Reset</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Day Modal -->
+<div id="calendarModal" class="modal fixed inset-0 bg-black/70 z-50 hidden opacity-0">
+  <div class="bg-transparent w-full h-full flex items-center justify-center p-4">
+    <div class="panel-2 w-full max-w-md p-6 relative">
+      <button id="closeModal" class="absolute top-3 right-3 btn">✕</button>
+      <h3 id="modalDate" class="text-lg font-bold mb-4"></h3>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // ---------- Data ----------
+  const foodDatabaseDefault = {
+    "Chicken Breast": { basis:"per100g", cals:165, p:31, c:0, f:3.6, fib:0 },
+    "Chicken Thighs": { basis:"per100g", cals:177, p:24, c:0, f:8.2, fib:0 },
+    "Masoor Dal (dry)": { basis:"per100g", cals:343, p:24, c:63, f:1.0, fib:11 },
+    "Moong Dal (dry)": { basis:"per100g", cals:347, p:24, c:63, f:1.2, fib:16 },
+    "Rice (raw)": { basis:"per100g", cals:130, p:2.7, c:28, f:0.3, fib:0.4 },
+    "Broken Wheat": { basis:"per100g", cals:340, p:12, c:76, f:2, fib:12.5 },
+    "Oats": { basis:"per100g", cals:389, p:17, c:66, f:7, fib:10.6 },
+    "Wheat Flour": { basis:"per100g", cals:364, p:10, c:76, f:1, fib:2.7 },
+    "Dosa/Idli Batter": { basis:"per100g", cals:150, p:4, c:30, f:1, fib:1 },
+    "Mixed Veggies": { basis:"per100g", cals:60, p:3, c:12, f:0.2, fib:3 },
+    "Almonds (28 g)": { basis:"per100g", cals:579, p:21, c:22, f:49, fib:12.5 },
+    "Bread (slice)": { basis:"perUnit", unitSize:"1 slice", cals:80, p:3, c:15, f:1, fib:1 },
+    "Banana (medium)": { basis:"perUnit", unitSize:"1 medium", cals:105, p:1.3, c:27, f:0.3, fib:3.1 },
+    "Egg (large)": { basis:"perUnit", unitSize:"1 egg", cals:72, p:6.3, c:0.4, f:4.8, fib:0 },
+    "Soya Chunks": { basis:"per100g", cals:345, p:52, c:33, f:0.5, fib:13 },
+    "Whey Protein": { basis:"per100g", cals:400, p:80, c:5, f:5, fib:0 },
+    "Oil/Ghee": { basis:"per100g", cals:900, p:0, c:0, f:100, fib:0 },
+    "Dates": { basis:"per100g", cals:282, p:2, c:75, f:0.2, fib:8 },
+    "White Rice": { basis:"per100g", cals:130, p:2.7, c:28, f:0.3, fib:0.4 },
+    "Whole Wheat Bread": { basis:"per100g", cals:265, p:9, c:49, f:3.2, fib:6.7 },
+
+    "Curd (Dahi, plain)": { basis:"per100g", cals:61, p:3.5, c:4.7, f:3.3, fib:0 },
+    "Milk (buffalo, fluid)": { basis:"per100g", cals:97, p:3.7, c:5.3, f:7.0, fib:0 },
+    "Fish (generic cooked)": { basis:"per100g", cals:116, p:20, c:0, f:3, fib:0 },
+    "Onion": { basis:"per100g", cals:40, p:1.1, c:9.3, f:0.1, fib:1.7 },
+    "Green Chili": { basis:"per100g", cals:40, p:2, c:9, f:0.2, fib:1.5 },
+    "Tomato": { basis:"per100g", cals:18, p:0.9, c:3.9, f:0.2, fib:1.2 },
+    "Brinjal (Eggplant)": { basis:"per100g", cals:25, p:1, c:6, f:0.2, fib:3 },
+    "Potato (boiled)": { basis:"per100g", cals:87, p:1.9, c:20, f:0.1, fib:2.2 },
+
+    "Mayonnaise (tbsp)": { basis:"perTbsp", cals:94, p:0.1, c:0.1, f:10, fib:0 },
+    "Ranch (tbsp)": { basis:"perTbsp", cals:63, p:0.2, c:1, f:7, fib:0 },
+    "Mayonnaise (per 100 g)": { basis:"per100g", cals:680, p:1, c:1, f:75, fib:0 },
+    "Ranch (per 100 g)": { basis:"per100g", cals:421, p:1.3, c:6, f:44, fib:0 }
+  };
+
+  const STORAGE_KEYS={ LOGS:'healthTrackerLogs', MY_FOODS:'healthTrackerMyFoods', GOALS:'healthTrackerGoals' };
+  let dailyLogs = parseOr({}, localStorage.getItem(STORAGE_KEYS.LOGS));
+  let myFoods  = parseOr({}, localStorage.getItem(STORAGE_KEYS.MY_FOODS));
+  let GOALS    = parseOr({ cals:1650, p:120, c:150, f:55, fib:25 }, localStorage.getItem(STORAGE_KEYS.GOALS));
+  let currentDisplayDate = new Date();
+
+  const toast=document.getElementById('toast');
+  const mealLoggingArea=document.getElementById('meal-logging-area');
+  const calendarEl=document.getElementById('calendar');
+
+  let rings={ calories:null, protein:null, carbs:null, fats:null, fiber:null };
+  let weekChart=null, monthChart=null;
+
+  function parseOr(fallback, json){ try{ const v=JSON.parse(json); return v && typeof v==='object' ? v : fallback; }catch(e){ return fallback; } }
+  function getFoods(){ return Object.assign({}, foodDatabaseDefault, myFoods); }
+  function saveLogs(){ try{ localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(dailyLogs)); }catch(e){} }
+  function saveMyFoods(){ try{ localStorage.setItem(STORAGE_KEYS.MY_FOODS, JSON.stringify(myFoods)); }catch(e){} }
+  function saveGoals(){ try{ localStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(GOALS)); }catch(e){} }
+  function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'), 1800); }
+  function todayKey(){ const now=new Date(); const d=new Date(now.getFullYear(), now.getMonth(), now.getDate()); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+  function basisToGrams(b){ return b==='perTbsp'?15 : b==='perTsp'?5 : b==='perOz'?28 : b==='perMl'?10 : 100; }
+
+  function computeItemNutrition(name, quantity, unit){
+    const item=getFoods()[name]; if(!item) return {cals:0,p:0,c:0,f:0,fib:0};
+    let factor=0;
+    if(item.basis==='per100g'){ factor=(unit==='g'?quantity:0)/100; }
+    else if(item.basis==='perUnit'){ factor=(unit==='count'?quantity:0); }
+    else { factor=(unit==='count')?quantity:(unit==='g'?(quantity/basisToGrams(item.basis)):0); }
+    return { cals:item.cals*factor, p:item.p*factor, c:item.c*factor, f:item.f*factor, fib:(item.fib||0)*factor };
+  }
+
+  function makeRing(id){
+    const ctx=document.getElementById(id).getContext('2d');
+    return new Chart(ctx,{ type:'doughnut', data:{ datasets:[{ data:[0,1], backgroundColor:['#14b8a6','rgba(255,255,255,0.08)'], borderColor:['rgba(255,255,255,0.12)'], borderWidth:1.5 }] }, options:{ responsive:true, maintainAspectRatio:false, cutout:'72%', rotation:-90, circumference:360, plugins:{legend:{display:false}, tooltip:{enabled:false}} } });
+  }
+  function setRingFill(chart, val, goal){ const f=Math.max(0,Math.min(1, goal>0?val/goal:0)); chart.data.datasets[0].data=[f,1-f]; chart.update(); }
+
+  function renderGoalsLabels(){
+    document.getElementById('goalCalsDisplay').textContent=GOALS.cals;
+    document.getElementById('goalPDisplay').textContent=GOALS.p;
+    document.getElementById('goalCDisplay').textContent=GOALS.c;
+    document.getElementById('goalFDisplay').textContent=GOALS.f;
+    document.getElementById('goalFibDisplay').textContent=GOALS.fib;
+    document.getElementById('goalCalsFull').value=GOALS.cals;
+    document.getElementById('goalPFull').value=GOALS.p;
+    document.getElementById('goalCFull').value=GOALS.c;
+    document.getElementById('goalFFull').value=GOALS.f;
+    document.getElementById('goalFibFull').value=GOALS.fib;
+  }
+
+  const goalCalsEditor=document.getElementById('goalCalsEditor');
+  document.getElementById('goalCalsDisplay').addEventListener('click',()=>{ document.getElementById('goalCalsInput').value=GOALS.cals; goalCalsEditor.style.display='flex'; });
+  document.getElementById('goalCalsSave').addEventListener('click',()=>{ const v=+document.getElementById('goalCalsInput').value||GOALS.cals; GOALS.cals=v; saveGoals(); goalCalsEditor.style.display='none'; renderGoalsLabels(); updateTotals(); });
+  document.getElementById('goalCalsCancel').addEventListener('click',()=> goalCalsEditor.style.display='none');
+
+  const goalsModal=document.getElementById('goalsModal');
+  document.getElementById('editGoalsBtn').addEventListener('click',()=>{ goalsModal.classList.remove('hidden'); setTimeout(()=>goalsModal.classList.remove('opacity-0'),10); });
+  document.getElementById('closeGoalsModal').addEventListener('click',()=>{ goalsModal.classList.add('opacity-0'); setTimeout(()=>goalsModal.classList.add('hidden'),250); });
+  document.getElementById('saveGoalsFull').addEventListener('click',()=>{
+    GOALS={ cals:+document.getElementById('goalCalsFull').value||GOALS.cals, p:+document.getElementById('goalPFull').value||GOALS.p, c:+document.getElementById('goalCFull').value||GOALS.c, f:+document.getElementById('goalFFull').value||GOALS.f, fib:+document.getElementById('goalFibFull').value||GOALS.fib };
+    saveGoals(); renderGoalsLabels(); updateTotals(); goalsModal.classList.add('opacity-0'); setTimeout(()=>goalsModal.classList.add('hidden'),250);
+  });
+  document.getElementById('resetGoalsFull').addEventListener('click',()=>{ GOALS={cals:1650,p:120,c:150,f:55,fib:25}; saveGoals(); renderGoalsLabels(); updateTotals(); });
+
+  function mealCard(meal,i){
+    const card=document.createElement('div'); card.className='panel p-4'; card.dataset.mealIndex=i;
+    const names=Object.keys(getFoods()).sort(); const options=names.map(n=>`<option value="${n}">${n}</option>`).join('');
+    const rows=meal.foods.map((f,idx)=>`
+      <tr data-food-index="${idx}">
+        <td class="py-1">${f.name}</td>
+        <td class="py-1">${f.quantity} ${f.unit==='g'?'g':'ct'}</td>
+        <td class="py-1" style="color:var(--muted)">${f.cals.toFixed(0)} kcal</td>
+        <td class="py-1">${f.p.toFixed(1)} g</td>
+        <td class="py-1">${f.c.toFixed(1)} g</td>
+        <td class="py-1">${f.f.toFixed(1)} g</td>
+        <td class="py-1">${(f.fib||0).toFixed(1)} g</td>
+        <td class="py-1 text-right"><button class="btn btn-danger btn-sm delete-food-btn">Delete</button></td>
+      </tr>`).join('');
+    card.innerHTML=`
+      <div class="flex justify-between items-center">
+        <div class="flex-grow mr-4">
+          <h3 class="text-lg font-semibold meal-name">${meal.name}</h3>
+          <input type="text" class="meal-name-input hidden w-full text-lg font-semibold input" value="${meal.name}">
+        </div>
+        <div class="flex items-center gap-3">
+          <input type="time" class="input" value="${meal.time}" style="width:84px">
+          <span class="meal-subtotal text-sm" style="color:var(--muted)">0 kcal</span>
+          <button class="btn update-meal-btn">Update Totals</button>
+          <button class="btn-primary add-ingredients-btn">+ Add ingredients</button>
+          <button class="btn btn-danger delete-meal-btn">Delete</button>
+        </div>
+      </div>
+      <div class="accordion mt-4">
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm mb-3">
+            <thead><tr><th>Item</th><th>Qty</th><th>kcal</th><th>P</th><th>C</th><th>F</th><th>Fiber</th><th></th></tr></thead>
+            <tbody class="divide-y" style="border-color:var(--border)">${rows}</tbody>
+          </table>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-2 items-end pt-3 border-t" style="border-color:var(--border)">
+          <select class="food-item-select w-full input">${options}</select>
+          <select class="unit-select w-full input"><option value="g">Grams</option><option value="count">Units</option></select>
+          <input type="number" placeholder="Quantity" class="food-qty-input w-full input" min="1" step="1">
+          <button class="add-food-btn w-full btn-primary">Add Item</button>
+          <input type="number" placeholder="Misc kcal" class="misc-kcal-input w-full input" min="1" step="1">
+          <button class="add-misc-btn w-full btn">+ Misc kcal</button>
+        </div>
+      </div>`;
+    const acc=card.querySelector('.accordion'); const unitSel=card.querySelector('.unit-select'); const foodSel=card.querySelector('.food-item-select'); const qty=card.querySelector('.food-qty-input');
+    function syncUnit(){ const it=getFoods()[foodSel.value]; if(!it) return; const prefersCount=it.basis!=='per100g'; unitSel.value=prefersCount?'count':'g'; qty.placeholder=prefersCount?'Units':'Grams'; }
+    foodSel.addEventListener('change',syncUnit); syncUnit();
+    card.querySelector('.add-ingredients-btn').addEventListener('click',()=>{ if(!acc) return; acc.style.maxHeight=acc.scrollHeight+'px'; qty.focus(); });
+    updateSubtotal(card);
+    return card;
+  }
+  function updateSubtotal(card){
+    const idx=parseInt(card.dataset.mealIndex,10); const key=todayKey(); const meal=dailyLogs[key]?.[idx]; if(!meal) return;
+    const kcal=meal.foods.reduce((s,f)=>s+f.cals,0); card.querySelector('.meal-subtotal').textContent=`${kcal.toFixed(0)} kcal`;
+  }
+  function renderToday(){
+    const key=todayKey(); mealLoggingArea.innerHTML=''; const log=dailyLogs[key]||[];
+    log.forEach((m,i)=> mealLoggingArea.appendChild(mealCard(m,i))); updateTotals();
+  }
+  function updateTotals(){
+    const key=todayKey(); const log=dailyLogs[key]||[];
+    const t=log.flatMap(m=>m.foods).reduce((a,x)=>{a.cals+=x.cals;a.p+=x.p;a.c+=x.c;a.f+=x.f;a.fib+=(x.fib||0);return a;},{cals:0,p:0,c:0,f:0,fib:0});
+    document.getElementById('caloriesText').innerHTML = `${t.cals.toFixed(0)} / <span id="goalCalsDisplay" class="editable-goal">${GOALS.cals}</span> kcal`;
+    document.getElementById('proteinText').innerHTML  = `${t.p.toFixed(0)} / <span id="goalPDisplay" class="editable-goal">${GOALS.p}</span> g`;
+    document.getElementById('carbsText').innerHTML    = `${t.c.toFixed(0)} / <span id="goalCDisplay" class="editable-goal">${GOALS.c}</span> g`;
+    document.getElementById('fatsText').innerHTML     = `${t.f.toFixed(0)} / <span id="goalFDisplay" class="editable-goal">${GOALS.f}</span> g`;
+    document.getElementById('fiberText').innerHTML    = `${t.fib.toFixed(1)} / <span id="goalFibDisplay" class="editable-goal">${GOALS.fib}</span> g`;
+    setRingFill(rings.calories, t.cals, GOALS.cals);
+    setRingFill(rings.protein,  t.p,    GOALS.p);
+    setRingFill(rings.carbs,    t.c,    GOALS.c);
+    setRingFill(rings.fats,     t.f,    GOALS.f);
+    setRingFill(rings.fiber,    t.fib,  GOALS.fib);
+    renderCalendar(); renderWeekAverages(); renderInsightCharts();
+  }
+
+  mealLoggingArea.addEventListener('click',(e)=>{
+    const card=e.target.closest('[data-meal-index]'); if(!card) return; const idx=parseInt(card.dataset.mealIndex,10); const key=todayKey();
+
+    if(e.target.matches('.add-food-btn')){
+      const foodSel=card.querySelector('.food-item-select'); const unitSel=card.querySelector('.unit-select'); const qty=card.querySelector('.food-qty-input');
+      const name=foodSel.value; const unit=unitSel.value; const q=parseFloat(qty.value);
+      if(!name||isNaN(q)||q<=0){ showToast('Enter a valid quantity'); return; }
+      const m=computeItemNutrition(name,q,unit);
+      dailyLogs[key][idx].foods.push({ name, quantity:q, unit, ...m }); saveLogs();
+      const tbody=card.querySelector('tbody'); const row=tbody.insertRow(); row.dataset.foodIndex=dailyLogs[key][idx].foods.length-1;
+      row.innerHTML=`<td class="py-1">${name}</td><td class="py-1">${q} ${unit==='g'?'g':'ct'}</td><td class="py-1" style="color:var(--muted)">${m.cals.toFixed(0)} kcal</td><td class="py-1">${m.p.toFixed(1)} g</td><td class="py-1">${m.c.toFixed(1)} g</td><td class="py-1">${m.f.toFixed(1)} g</td><td class="py-1">${(m.fib||0).toFixed(1)} g</td><td class="py-1 text-right"><button class="btn btn-danger btn-sm delete-food-btn">Delete</button></td>`;
+      qty.value=''; updateSubtotal(card); updateTotals();
+    }
+    if(e.target.matches('.add-misc-btn')){
+      const input=card.querySelector('.misc-kcal-input'); const kcal=parseFloat(input.value);
+      if(isNaN(kcal)||kcal<=0){ showToast('Enter misc kcal'); return; }
+      dailyLogs[key][idx].foods.push({ name:'Misc calories', quantity:kcal, unit:'kcal', cals:kcal, p:0, c:0, f:0, fib:0 }); saveLogs();
+      const tbody=card.querySelector('tbody'); const row=tbody.insertRow(); row.dataset.foodIndex=dailyLogs[key][idx].foods.length-1;
+      row.innerHTML=`<td class="py-1">Misc calories</td><td class="py-1">${kcal} kcal</td><td class="py-1" style="color:var(--muted)">${kcal.toFixed(0)} kcal</td><td class="py-1">0.0 g</td><td class="py-1">0.0 g</td><td class="py-1">0.0 g</td><td class="py-1">0.0 g</td><td class="py-1 text-right"><button class="btn btn-danger btn-sm delete-food-btn">Delete</button></td>`;
+      input.value=''; updateSubtotal(card); updateTotals();
+    }
+    if(e.target.matches('.delete-food-btn')){
+      const row=e.target.closest('tr'); const i=parseInt(row.dataset.foodIndex,10);
+      dailyLogs[key][idx].foods.splice(i,1); saveLogs(); row.remove();
+      card.querySelectorAll('tbody tr').forEach((r,ii)=> r.dataset.foodIndex=ii); updateSubtotal(card); updateTotals();
+    }
+    if(e.target.matches('.delete-meal-btn')){
+      if(confirm('Delete this meal?')){ dailyLogs[key].splice(idx,1); saveLogs(); card.remove(); document.querySelectorAll('#meal-logging-area > div').forEach((c,i)=>c.dataset.mealIndex=i); updateTotals(); }
+    }
+    if(e.target.matches('.update-meal-btn')){ updateSubtotal(card); updateTotals(); }
+    if(e.target.matches('.meal-name')){ const h=e.target; const input=h.nextElementSibling; h.classList.add('hidden'); input.classList.remove('hidden'); input.focus(); input.select(); }
+  });
+
+  // Calendar & insights
+  function mondayOf(date){ const d=new Date(date); const day=(d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d; }
+  function weekKeys(anchor){ const mon=mondayOf(anchor); return Array.from({length:7},(_,i)=>{ const d=new Date(mon); d.setDate(mon.getDate()+i); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }); }
+  function weekTotals(anchor){ return weekKeys(anchor).map(k=> (dailyLogs[k]||[]).flatMap(m=>m.foods).reduce((a,x)=>{a.cals+=x.cals;return a;},{cals:0})); }
+  function renderCalendar(){
+    calendarEl.innerHTML=''; const m=currentDisplayDate.getMonth(); const y=currentDisplayDate.getFullYear();
+    document.getElementById('monthYear').textContent=`${currentDisplayDate.toLocaleString('default',{month:'long'})} ${y}`;
+    ['S','M','T','W','T','F','S'].forEach(d=>{ const el=document.createElement('div'); el.className='text-xs font-bold'; el.style.color='var(--muted)'; el.textContent=d; calendarEl.appendChild(el); });
+    const first=new Date(y,m,1).getDay(); for(let i=0;i<first;i++) calendarEl.appendChild(document.createElement('div'));
+    const daysIn=new Date(y,m+1,0).getDate();
+    for(let d=1; d<=daysIn; d++){
+      const el=document.createElement('div'); const key=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      el.textContent=d; el.className='calendar-day p-2 cursor-pointer rounded-full'; el.dataset.date=key;
+      const log=dailyLogs[key];
+      if(log && log.flatMap(x=>x.foods).length>0){
+        const kc=log.flatMap(x=>x.foods).reduce((s,i)=>s+i.cals,0);
+        const intensity=Math.min(kc/GOALS.cals,1);
+        el.style.background='linear-gradient(180deg, rgba(20,184,166,0.9), rgba(20,184,166,0.55))';
+        el.style.color='#001513'; el.style.opacity=(0.2+intensity*0.8).toString();
+      } else {
+        el.style.background='rgba(255,255,255,0.04)'; el.style.border='1px solid var(--border)';
+      }
+      calendarEl.appendChild(el);
+    }
+  }
+  calendarEl.addEventListener('click',(e)=>{ if(e.target.dataset.date) showDayModal(e.target.dataset.date); });
+
+  const dayModal=document.getElementById('calendarModal'); const closeModalBtn=document.getElementById('closeModal');
+  closeModalBtn.addEventListener('click',()=>{ dayModal.classList.add('opacity-0'); setTimeout(()=>dayModal.classList.add('hidden'),250); });
+  dayModal.addEventListener('click',(e)=>{ if(e.target===dayModal){ dayModal.classList.add('opacity-0'); setTimeout(()=>dayModal.classList.add('hidden'),250); }});
+  function showDayModal(key){
+    dayModal.classList.remove('hidden'); setTimeout(()=>dayModal.classList.remove('opacity-0'),10);
+    document.getElementById('modalDate').textContent=new Date(key+'T00:00:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    const log=dailyLogs[key];
+    const c=document.getElementById('modalContent');
+    if(!log||log.flatMap(m=>m.foods).length===0){ c.innerHTML='<p style="color:var(--muted)">No data logged.</p>'; return; }
+    const t=log.flatMap(m=>m.foods).reduce((a,i)=>{a.cals+=i.cals;a.p+=i.p;a.c+=i.c;a.f+=i.f;a.fib+=(i.fib||0);return a;},{cals:0,p:0,c:0,f:0,fib:0});
+    c.innerHTML=`<div class="text-center mb-4"><div class="text-lg">Total Calories: <strong>${t.cals.toFixed(0)} kcal</strong></div></div>
+      <div class="grid grid-cols-5 gap-2 text-center">
+        <div class="panel p-3"><div class="font-bold">${t.p.toFixed(0)} g</div><div class="text-xs" style="color:var(--muted)">Protein</div></div>
+        <div class="panel p-3"><div class="font-bold">${t.c.toFixed(0)} g</div><div class="text-xs" style="color:var(--muted)">Carbs</div></div>
+        <div class="panel p-3"><div class="font-bold">${t.f.toFixed(0)} g</div><div class="text-xs" style="color:var(--muted)">Fats</div></div>
+        <div class="panel p-3"><div class="font-bold">${t.fib.toFixed(1)} g</div><div class="text-xs" style="color:var(--muted)">Fiber</div></div>
+        <div class="panel p-3"><div class="font-bold">${(t.cals/(GOALS.cals||1)*100).toFixed(0)}%</div><div class="text-xs" style="color:var(--muted)">Goal fill</div></div>
+      </div>`;
+  }
+
+  function renderWeekAverages(){
+    const keys=weekKeys(currentDisplayDate);
+    const sum=keys.reduce((a,k)=>{ const t=(dailyLogs[k]||[]).flatMap(m=>m.foods).reduce((s,x)=>{s.cals+=x.cals;s.p+=x.p;s.c+=x.c;s.f+=x.f;s.fib+=(x.fib||0);return s;},{cals:0,p:0,c:0,f:0,fib:0}); a.cals+=t.cals;a.p+=t.p;a.c+=t.c;a.f+=t.f;a.fib+=t.fib; return a; },{cals:0,p:0,c:0,f:0,fib:0});
+    const avg={ cals:sum.cals/7, p:sum.p/7, c:sum.c/7, f:sum.f/7, fib:sum.fib/7 };
+    document.getElementById('weeklyAverages').innerHTML=`
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+        <div class="panel-2 p-3"><p class="font-bold">${avg.cals.toFixed(0)}</p><p class="text-xs" style="color:var(--muted)">Avg Cals</p></div>
+        <div class="panel-2 p-3"><p class="font-bold">${avg.p.toFixed(0)}g</p><p class="text-xs" style="color:var(--muted)">Avg Protein</p></div>
+        <div class="panel-2 p-3"><p class="font-bold">${avg.c.toFixed(0)}g</p><p class="text-xs" style="color:var(--muted)">Avg Carbs</p></div>
+        <div class="panel-2 p-3"><p class="font-bold">${avg.f.toFixed(0)}g</p><p class="text-xs" style="color:var(--muted)">Avg Fats</p></div>
+        <div class="panel-2 p-3"><p class="font-bold">${avg.fib.toFixed(1)}g</p><p class="text-xs" style="color:var(--muted)">Avg Fiber</p></div>
+      </div>`;
+  }
+
+  function renderInsightCharts(){
+    const weekCanvas=document.getElementById('weekCalories');
+    const monthCanvas=document.getElementById('monthCalories');
+    if(weekCanvas){
+      const labels=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const data=weekTotals(new Date()).map(x=>Math.round(x.cals));
+      if(!weekChart){ weekChart=new Chart(weekCanvas.getContext('2d'),{ type:'bar', data:{ labels, datasets:[{ data, backgroundColor:'rgba(20,184,166,0.6)'}] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true } } } }); }
+      else { weekChart.data.labels=labels; weekChart.data.datasets[0].data=data; weekChart.update(); }
+    }
+    if(monthCanvas){
+      const now=new Date(); const daysIn=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+      const labels=Array.from({length:daysIn},(_,i)=>`${i+1}`);
+      const data=labels.map((_,i)=>{ const k=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(i+1).padStart(2,'0')}`; return Math.round((dailyLogs[k]||[]).flatMap(m=>m.foods).reduce((s,x)=>s+x.cals,0)); });
+      if(!monthChart){ monthChart=new Chart(monthCanvas.getContext('2d'),{ type:'line', data:{ labels, datasets:[{ data, borderColor:'#06b6d4', backgroundColor:'rgba(6,182,212,0.15)', tension:0.25, fill:true }] }, options:{ plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true } } } }); }
+      else { monthChart.data.labels=labels; monthChart.data.datasets[0].data=data; monthChart.update(); }
+    }
+  }
+
+  // Food table render & sort
+  const foodViewFilter=document.getElementById('foodViewFilter');
+  function renderFoodTable(sortKey='name', asc=true){
+    const rows=[]; const builtins=foodDatabaseDefault; const mine=myFoods; const names=new Set([...Object.keys(builtins),...Object.keys(mine)]);
+    names.forEach(n=>{
+      const v=mine[n]||builtins[n]; const src=mine[n]?'My':'Built‑in'; if(!v) return;
+      const show=foodViewFilter.value==='all' || (foodViewFilter.value==='my'&&src==='My') || (foodViewFilter.value==='builtin'&&src==='Built‑in'); if(!show) return;
+      const basis = v.basis==='per100g'?'per 100 g': v.basis==='perUnit'?(v.unitSize||'per unit') : v.basis.replace(/^per/,'per ');
+      rows.push({ name:n, basis, cals:+v.cals, p:+v.p, c:+v.c, f:+v.f, fib:+(v.fib||0), source:src });
+    });
+    rows.sort((a,b)=>{ const A=a[sortKey], B=b[sortKey]; return typeof A==='string' ? (asc?A.localeCompare(B):B.localeCompare(A)) : (asc?A-B:B-A); });
+    const tbody=document.getElementById('foodTableBody');
+    tbody.innerHTML=rows.map(r=>{
+      const canEdit=r.source==='My';
+      return `<tr>
+        <td class="px-4 py-2">${r.name}</td>
+        <td class="px-4 py-2">${r.basis}</td>
+        <td class="px-4 py-2">${r.cals}</td>
+        <td class="px-4 py-2">${r.p}</td>
+        <td class="px-4 py-2">${r.c}</td>
+        <td class="px-4 py-2">${r.f}</td>
+        <td class="px-4 py-2">${r.fib}</td>
+        <td class="px-4 py-2"><span class="badge">${r.source}</span></td>
+        <td class="px-4 py-2">
+          ${canEdit?`<button class="btn text-xs edit-food" data-name="${encodeURIComponent(r.name)}">Edit</button>
+           <button class="btn btn-danger text-xs delete-food" data-name="${encodeURIComponent(r.name)}">Delete</button>`
+                  :`<button class="btn text-xs edit-food" data-name="${encodeURIComponent(r.name)}">Override</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  (function initFoodSort(){
+    let current='name', asc=true;
+    document.querySelectorAll('#foodTable thead th.sortable').forEach(th=>{
+      th.addEventListener('click',()=>{ const key=th.dataset.key; if(key===current) asc=!asc; else { current=key; asc=true; } renderFoodTable(current,asc); });
+    });
+    foodViewFilter.addEventListener('change',()=>renderFoodTable(current,asc));
+  })();
+
+  // Manage Foods modal (edit/add/delete)
+  const foodsModal=document.getElementById('foodsModal');
+  const manageFoodsBtn=document.getElementById('manageFoodsBtn');
+  const closeFoodsModalBtn=document.getElementById('closeFoodsModal');
+  const myFoodsTableBody=document.getElementById('myFoodsTableBody');
+  const foodForm=document.getElementById('foodForm');
+  const foodEditingName=document.getElementById('foodEditingName');
+  const foodName=document.getElementById('foodName');
+  const foodBasis=document.getElementById('foodBasis');
+  const foodUnitLabel=document.getElementById('foodUnitLabel');
+  const foodCals=document.getElementById('foodCals');
+  const foodP=document.getElementById('foodP');
+  const foodC=document.getElementById('foodC');
+  const foodF=document.getElementById('foodF');
+  const foodFib=document.getElementById('foodFib');
+  const foodFormMsg=document.getElementById('foodFormMsg');
+  const resetFoodFormBtn=document.getElementById('resetFoodForm');
+
+  function openFoodsModal(){ foodsModal.classList.remove('hidden'); setTimeout(()=>foodsModal.classList.remove('opacity-0'),10); renderMyFoodsTable(); resetFoodForm(); }
+  function closeFoods(){ foodsModal.classList.add('opacity-0'); setTimeout(()=>foodsModal.classList.add('hidden'),250); }
+  manageFoodsBtn.addEventListener('click',openFoodsModal);
+  closeFoodsModalBtn.addEventListener('click',closeFoods);
+  foodsModal.addEventListener('click',(e)=>{ if(e.target===foodsModal) closeFoods(); });
+
+  function renderMyFoodsTable(){
+    const names=Object.keys(myFoods).sort((a,b)=>a.localeCompare(b));
+    myFoodsTableBody.innerHTML = names.length ? names.map(n=>{
+      const v=myFoods[n]; const basis=v.basis==='per100g'?'per 100 g': v.basis==='perUnit'?(v.unitSize||'per unit') : v.basis.replace(/^per/,'per ');
+      return `<tr>
+        <td class="px-3 py-2">${n}</td>
+        <td class="px-3 py-2">${basis}</td>
+        <td class="px-3 py-2">${+v.cals}</td>
+        <td class="px-3 py-2 text-right">
+          <button class="btn text-xs edit-food" data-name="${encodeURIComponent(n)}">Edit</button>
+          <button class="btn btn-danger text-xs delete-food" data-name="${encodeURIComponent(n)}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('') : `<tr><td class="px-3 py-2 text-sm" colspan="4" style="color:var(--muted)">No custom foods yet.</td></tr>`;
+  }
+  function resetFoodForm(){ foodEditingName.value=''; foodName.value=''; foodBasis.value='per100g'; foodUnitLabel.value=''; foodCals.value=''; foodP.value=''; foodC.value=''; foodF.value=''; foodFib.value=''; foodFormMsg.textContent=''; }
+  function validateFoodForm(){
+    const name=foodName.value.trim(); const basis=foodBasis.value; const unit=foodUnitLabel.value.trim();
+    const cals=parseFloat(foodCals.value); const p=parseFloat(foodP.value); const c=parseFloat(foodC.value); const f=parseFloat(foodF.value); const fib=parseFloat(foodFib.value||0);
+    if(!name) return {ok:false,msg:'Name required'};
+    if(!['per100g','perUnit','perTbsp','perTsp','perOz','perMl'].includes(basis)) return {ok:false,msg:'Basis invalid'};
+    if(basis==='perUnit' && !unit) return {ok:false,msg:'Unit label required'};
+    if([cals,p,c,f,fib].some(v=>Number.isNaN(v)||v<0)) return {ok:false,msg:'Values must be non-negative'};
+    return {ok:true,data:{name,basis,unitSize:(basis==='perUnit'?unit:undefined),cals,p,c,f,fib}};
+  }
+  resetFoodFormBtn.addEventListener('click',resetFoodForm);
+
+  document.addEventListener('click',(e)=>{
+    if(e.target.classList.contains('edit-food')){
+      const name=decodeURIComponent(e.target.dataset.name||''); const v=myFoods[name]||foodDatabaseDefault[name]; if(!v) return;
+      foodEditingName.value=myFoods[name]?name:''; foodName.value=name; foodBasis.value=v.basis; foodUnitLabel.value=v.unitSize||''; foodCals.value=v.cals; foodP.value=v.p; foodC.value=v.c; foodF.value=v.f; foodFib.value=v.fib||0;
+      openFoodsModal(); foodFormMsg.textContent=myFoods[name]?'':'Editing a built‑in: Save to create an override.'; foodFormMsg.style.color=myFoods[name]?'var(--muted)':'var(--accent-2)';
+    }
+    if(e.target.classList.contains('delete-food')){
+      const name=decodeURIComponent(e.target.dataset.name||''); if(myFoods[name]){ if(confirm(`Delete "${name}"?`)){ delete myFoods[name]; saveMyFoods(); renderMyFoodsTable(); renderFoodTable(); showToast('Food deleted'); } } else { showToast('Built‑in cannot be deleted'); }
+    }
+  });
+
+  foodForm.addEventListener('submit',(e)=>{
+    e.preventDefault();
+    const v=validateFoodForm(); if(!v.ok){ foodFormMsg.textContent=v.msg; foodFormMsg.style.color='var(--danger)'; return; }
+    const {name,basis,unitSize,cals,p,c,f,fib}=v.data;
+    const clash=Object.keys(myFoods).find(n=>n.toLowerCase()===name.toLowerCase() && n!==name);
+    if(clash){ foodFormMsg.textContent='A food with the same name exists.'; foodFormMsg.style.color='var(--danger)'; return; }
+    if(foodDatabaseDefault[name] && !foodEditingName.value){ if(!confirm(`"${name}" is built‑in. Create override?`)) return; }
+    myFoods[name]={ basis, ...(unitSize?{unitSize}:{}), cals,p,c,f,fib:(fib||0) }; saveMyFoods(); renderMyFoodsTable(); renderFoodTable(); resetFoodForm(); showToast('Food saved');
+  });
+
+  // Export / Import
+  document.getElementById('exportBtn').addEventListener('click',()=>{
+    try{
+      const logs=[['Date','Meal Name','Meal Time','Food Item','Unit','Quantity','Calories','Protein','Carbs','Fats','Fiber']];
+      Object.keys(dailyLogs).sort().forEach(dk=>{ (dailyLogs[dk]||[]).forEach(m=>{ if(m.foods.length===0) logs.push([dk,m.name,m.time,'','','','','','','','']); else m.foods.forEach(i=> logs.push([dk,m.name,m.time,i.name,i.unit,i.quantity,Math.round(i.cals),Math.round(i.p),Math.round(i.c),Math.round(i.f),Math.round(i.fib||0)])); }); });
+      const wsLogs=XLSX.utils.aoa_to_sheet(logs);
+
+      const db=[['Name','Basis','UnitLabel','Calories','Protein','Carbs','Fats','Fiber','Source']];
+      const names=new Set([...Object.keys(foodDatabaseDefault),...Object.keys(myFoods)]);
+      names.forEach(n=>{ const v=myFoods[n]||foodDatabaseDefault[n]; db.push([n,v.basis,v.unitSize||'',v.cals,v.p,v.c,v.f,v.fib||0,myFoods[n]?'My':'Built-in']); });
+      const wsDB=XLSX.utils.aoa_to_sheet(db);
+
+      const goals=[['Calories','Protein','Carbs','Fats','Fiber'],[GOALS.cals,GOALS.p,GOALS.c,GOALS.f,GOALS.fib]];
+      const wsGoals=XLSX.utils.aoa_to_sheet(goals);
+
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,wsLogs,'Daily Logs');
+      XLSX.utils.book_append_sheet(wb,wsDB,'Food Database');
+      XLSX.utils.book_append_sheet(wb,wsGoals,'Goals');
+      XLSX.writeFile(wb,'Health_Tracker_Export.xlsx');
+      showToast('Exported Excel');
+    }catch(err){ console.error(err); showToast('Export failed'); }
+  });
+
+  document.getElementById('importFile').addEventListener('change', async (e)=>{
+    const f=e.target.files && e.target.files[0]; if(!f) return;
+    try{
+      const data=await f.arrayBuffer(); const wb=XLSX.read(data);
+
+      // Goals
+      if(wb.Sheets['Goals']){
+        const g=XLSX.utils.sheet_to_json(wb.Sheets['Goals'],{header:1});
+        if(g[1]){ GOALS={ cals:+g[1][0]||GOALS.cals, p:+g[1][1]||GOALS.p, c:+g[1][2]||GOALS.c, f:+g[1][3]||GOALS.f, fib:+g[1][4]||GOALS.fib }; saveGoals(); }
+      }
+
+      // Food DB
+      if(wb.Sheets['Food Database']){
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets['Food Database'],{header:1,defval:''});
+        const h=rows[0]||[]; const map={name:h.indexOf('Name'),basis:h.indexOf('Basis'),unit:h.indexOf('UnitLabel'),cals:h.indexOf('Calories'),p:h.indexOf('Protein'),c:h.indexOf('Carbs'),f:h.indexOf('Fats'),fib:h.indexOf('Fiber'),src:h.indexOf('Source')};
+        const ok=Object.values(map).every(v=>v>=0);
+        if(ok){
+          const add={};
+          rows.slice(1).forEach(r=>{
+            const name=(r[map.name]||'').toString().trim(); const basis=(r[map.basis]||'').toString().trim(); const unit=(r[map.unit]||'').toString().trim();
+            const cals=+r[map.cals]; const p=+r[map.p]; const c=+r[map.c]; const f=+r[map.f]; const fib=+(r[map.fib]||0);
+            const src=(r[map.src]||'').toString().trim();
+            if(!name || !['per100g','perUnit','perTbsp','perTsp','perOz','perMl'].includes(basis)) return;
+            if([cals,p,c,f,fib].some(v=>Number.isNaN(v)||v<0)) return;
+            if(src==='My' || (src==='Built-in' && confirm(`Override built-in "${name}"?`))){
+              add[name]={ basis, ...(basis==='perUnit'?{unitSize:(unit||'per unit')}:{}), cals,p,c,f,fib };
+            }
+          });
+          myFoods={ ...myFoods, ...add }; saveMyFoods();
+        }else{ showToast('Food Database sheet missing columns'); }
+      }
+
+      // Daily Logs
+      const ws=wb.Sheets['Daily Logs']||wb.Sheets[wb.SheetNames[0]];
+      const logs=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      const h2=logs[0]||[]; 
+      const idx={ date:h2.indexOf('Date'), meal:h2.indexOf('Meal Name'), time:h2.indexOf('Meal Time'),
+                  food:h2.indexOf('Food Item'), unit:h2.indexOf('Unit'), qty:h2.indexOf('Quantity'),
+                  cals:h2.indexOf('Calories'), p:h2.indexOf('Protein'), c:h2.indexOf('Carbs'),
+                  f:h2.indexOf('Fats'), fib:h2.indexOf('Fiber') };
+      if(Object.values(idx).every(v=>v>=0)){
+        const imported={};
+        logs.slice(1).forEach(r=>{
+          const dateKey=(r[idx.date]||'').toString().slice(0,10);
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+          if(!imported[dateKey]) imported[dateKey]=[];
+          const mealName=r[idx.meal]||'Meal'; const mealTime=r[idx.time]||'12:00';
+          let meal=imported[dateKey].find(m=>m.name===mealName && m.time===mealTime);
+          if(!meal){ meal={name:mealName,time:mealTime,foods:[]}; imported[dateKey].push(meal); }
+          const food=r[idx.food]; const unit=(r[idx.unit]||'g'); const qty=+r[idx.qty]||0;
+          const cals=+r[idx.cals]||0, p=+r[idx.p]||0, c=+r[idx.c]||0, f=+r[idx.f]||0, fib=+r[idx.fib]||0;
+          if(food && (qty>0 || food==='Misc calories')){
+            const calc = (cals||p||c||f||fib) ? {cals,p,c,f,fib} : computeItemNutrition(food,qty,unit);
+            meal.foods.push({ name:food, unit, quantity:qty, ...calc });
+          }
+        });
+        dailyLogs={ ...dailyLogs, ...imported }; saveLogs();
+      }else{ showToast('Daily Logs sheet missing columns'); }
+
+      renderFoodTable(); renderMyFoodsTable(); renderToday(); renderCalendar(); renderInsightCharts();
+      showToast('Imported');
+    }catch(err){ console.error(err); showToast('Import failed'); }
+    finally{ e.target.value=''; }
+  });
+
+  // Multi-tab sync for completeness
+  window.addEventListener('storage',(e)=>{
+    if(e.key===STORAGE_KEYS.LOGS){ dailyLogs=parseOr({}, e.newValue); renderToday(); renderCalendar(); renderInsightCharts(); }
+    if(e.key===STORAGE_KEYS.MY_FOODS){ myFoods=parseOr({}, e.newValue); renderFoodTable(); }
+    if(e.key===STORAGE_KEYS.GOALS){ GOALS=parseOr(GOALS, e.newValue); renderGoalsLabels(); updateTotals(); }
+  });
+
+  // Plans (same as previous message)
+  function grams(name, grams){ return {type:'g', name, grams}; }
+  function unit(name, count){ return {type:'count', name, count}; }
+  function macroFromItem(item){ return item.type==='g' ? computeItemNutrition(item.name,item.grams,'g') : computeItemNutrition(item.name,item.count,'count'); }
+  function sumMacros(list){ return list.reduce((a,it)=>{ const m=macroFromItem(it); a.cals+=m.cals;a.p+=m.p;a.c+=m.c;a.f+=m.f;a.fib+=(m.fib||0); return a; },{cals:0,p:0,c:0,f:0,fib:0}); }
+  function planRow(dayType,kcalTarget,variant,Psrc,Csrc,Fsrc,VFsrc,dishes,supp){
+    const P=sumMacros(Psrc), C=sumMacros(Csrc), F=sumMacros(Fsrc), V=sumMacros(VFsrc);
+    const M={ cals:P.cals+C.cals+F.cals+V.cals, p:P.p+C.p+F.p+V.p, c:P.c+C.c+F.c+V.c, f:P.f+C.f+F.f+V.f, fib:P.fib+C.fib+F.fib+V.fib };
+    const tr=document.createElement('tr');
+    const show=a=>a.map(it=>it.type==='g'?`${it.name}: ${it.grams}g`:`${it.name}: ${it.count}`).join(' • ');
+    tr.innerHTML=`<td class="px-3 py-2">${dayType}</td><td class="px-3 py-2">${kcalTarget}</td><td class="px-3 py-2">${variant}</td>
+      <td class="px-3 py-2">${show(Psrc)}</td><td class="px-3 py-2">${show(Csrc)}</td><td class="px-3 py-2">${show(Fsrc)}</td><td class="px-3 py-2">${show(VFsrc)}</td>
+      <td class="px-3 py-2">${Math.round(M.p)}</td><td class="px-3 py-2">${Math.round(M.c)}</td><td class="px-3 py-2">${Math.round(M.f)}</td><td class="px-3 py-2">${Math.round(M.fib)}</td>
+      <td class="px-3 py-2">${dishes}</td><td class="px-3 py-2">${supp}</td>`;
+    return tr;
+  }
+  function buildPlans(){
+    const tbody=document.getElementById('plansTbody'); tbody.innerHTML='';
+    tbody.appendChild(planRow('Low Calorie (Rest Day)','~1700 kcal','1',[grams('Chicken Breast',80),grams('Moong Dal (dry)',40),grams('Whey Protein',30)],[grams('White Rice',130),grams('Oats',40),unit('Banana (medium)',1)],[grams('Oil/Ghee',10)],[grams('Mixed Veggies',300),grams('Tomato',100)],'Breakfast: Oats Upma • Lunch: Moong Dal + Rice • Dinner: Chicken & Veg','1 Centrum 1 Fish Oil'));
+    tbody.appendChild(planRow('Low Calorie (Rest Day)','~1700 kcal','2',[unit('Egg (large)',2),grams('Soya Chunks',40),grams('Whey Protein',30)],[grams('Wheat Flour',100),unit('Banana (medium)',1)],[grams('Oil/Ghee',15)],[grams('Mixed Veggies',300),grams('Onion',80)],'Breakfast: Poha • Lunch: Soya Curry + Rotis • Dinner: Egg Bhurji + Roti','1 Centrum 1 Fish Oil'));
+    tbody.appendChild(planRow('Medium Calorie (Rest / Light)','~1950 kcal','1',[grams('Chicken Thighs',100),grams('Masoor Dal (dry)',50),grams('Whey Protein',30)],[grams('White Rice',180),grams('Broken Wheat',70)],[grams('Oil/Ghee',15)],[grams('Mixed Veggies',300),grams('Brinjal (Eggplant)',150)],'Breakfast: Dalia • Lunch: Masoor Dal Tadka • Dinner: Chicken Thigh Curry','1 Centrum 1 Fish Oil'));
+    tbody.appendChild(planRow('Medium Calorie (Rest / Light)','~1950 kcal','2',[grams('Chicken Breast',100),unit('Egg (large)',2),grams('Whey Protein',30)],[grams('Oats',80),grams('Whole Wheat Bread',100)],[grams('Oil/Ghee',15)],[grams('Mixed Veggies',300),grams('Tomato',100)],'Breakfast: Eggs on Toast • Lunch: Chicken & Veg Sandwich • Dinner: Oats Khichdi','1 Centrum 1 Fish Oil'));
+    tbody.appendChild(planRow('High Calorie (Workout Day)','~2200 kcal','1',[grams('Chicken Breast',120),grams('Moong Dal (dry)',40),grams('Whey Protein',30)],[grams('White Rice',220),grams('Dosa/Idli Batter',200)],[grams('Oil/Ghee',20)],[grams('Mixed Veggies',300),grams('Onion',60)],'Breakfast: Uttapam • Lunch: Chicken Fried Rice • Dinner: Moong Dal + Rice','1 Centrum 1 Fish Oil'));
+    tbody.appendChild(planRow('High Calorie (Workout Day)','~2200 kcal','2',[grams('Chicken Thighs',130),unit('Egg (large)',2),grams('Whey Protein',30)],[grams('Oats',90),grams('Wheat Flour',130)],[grams('Oil/Ghee',20)],[grams('Mixed Veggies',300),unit('Banana (medium)',1)],'Breakfast: Oats Cheela • Lunch: Egg Curry + Rotis • Dinner: Chicken Thigh Curry + Rotis','1 Centrum 1 Fish Oil'));
+  }
+
+  // Month nav
+  document.getElementById('prevMonth').addEventListener('click',()=>{ currentDisplayDate.setMonth(currentDisplayDate.getMonth()-1); renderCalendar(); });
+  document.getElementById('nextMonth').addEventListener('click',()=>{ currentDisplayDate.setMonth(currentDisplayDate.getMonth()+1); renderCalendar(); });
+
+  // Add meal
+  document.getElementById('addMealBtn').addEventListener('click',()=>{
+    const key=todayKey(); if(!dailyLogs[key]) dailyLogs[key]=[];
+    const t=new Date().toTimeString().substring(0,5);
+    dailyLogs[key].push({ name:`Meal ${dailyLogs[key].length+1}`, time:t, foods:[] });
+    saveLogs(); renderToday();
+  });
+
+  // Init
+  function initialize(){
+    document.getElementById('currentDate').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+    if(!dailyLogs[todayKey()]){ const t=new Date().toTimeString().substring(0,5); dailyLogs[todayKey()]=[{name:'Meal 1',time:t,foods:[]}]; saveLogs(); }
+    rings.calories=makeRing('caloriesChart'); rings.protein=makeRing('proteinChart'); rings.carbs=makeRing('carbsChart'); rings.fats=makeRing('fatsChart'); rings.fiber=makeRing('fiberChart');
+    renderGoalsLabels(); renderFoodTable(); buildPlans(); renderToday(); renderCalendar(); renderInsightCharts();
+  }
+  initialize();
+});
+</script>
+</body>
+</html>
